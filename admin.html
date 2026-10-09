@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Team Panel — Diwali Crackers Orders</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ui.css" />
+</head>
+<body>
+
+<div class="garland"></div>
+
+<div class="topbar">
+  <div>🔐 <b>Team Panel</b> · Diwali Crackers</div>
+  <div class="tb-r"><a href="index.html">← Back to store</a></div>
+</div>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand">
+      <div class="logo">🧾</div>
+      <div>
+        <h1>Orders <span>Dashboard</span></h1>
+        <p>Team access only</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="hbtn" id="refresh">↻ Refresh</button>
+      <button class="hbtn" id="logoutBtn">Log out</button>
+    </div>
+  </div>
+</header>
+
+<!-- LOGIN GATE -->
+<section class="block" id="gate">
+  <div class="wrap" style="max-width:470px">
+    <div class="mbox" style="margin:14px auto">
+      <div class="mbody" style="padding-top:28px">
+        <h4 style="font-size:21px;margin-bottom:6px">Team Login</h4>
+        <p class="hint" style="margin-bottom:16px">Enter the team password to see live orders.</p>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="pw" placeholder="Team password" />
+        </div>
+        <button class="btn gold" style="width:100%;justify-content:center" id="unlock">Unlock Dashboard</button>
+        <p class="hint" style="text-align:center;margin-top:12px">Default password is <b>diwali2026</b> — change it in <code>admin.html</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DASHBOARD -->
+<section class="block" id="dash" style="display:none">
+  <div class="wrap">
+    <div class="astat">
+      <div class="acard"><span>Total orders</span><b id="sTotal">0</b></div>
+      <div class="acard"><span>New</span><b id="sNew">0</b></div>
+      <div class="acard"><span>Packed</span><b id="sPacked">0</b></div>
+      <div class="acard"><span>Delivered</span><b id="sDelivered">0</b></div>
+      <div class="acard"><span>Order value</span><b id="sValue">₹0</b></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="search">
+        <span>🔍</span>
+        <input type="text" id="oSearch" placeholder="Search by order id, name or phone..." />
+      </div>
+      <div class="chips" id="oFilter" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      <button class="hbtn" id="exportCsv">⬇ Export CSV</button>
+    </div>
+
+    <div style="overflow-x:auto;border:1px solid var(--line);border-radius:18px;background:#fff">
+      <table class="otable" id="oTable">
+        <thead>
+          <tr>
+            <th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Placed</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="oBody"></tbody>
+      </table>
+    </div>
+
+    <p class="hint" style="text-align:center;margin-top:16px">
+      Orders placed on the store are saved in this browser. Once we connect Firebase, every order will land here instantly from any device.
+    </p>
+  </div>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script src="data.js"></script>
+<script>
+/* ===== Team dashboard ===== */
+const TEAM_PASSWORD = 'diwali2026';
+const ORD_KEY = 'dc_orders_v1';
+const AUTH_KEY = 'dc_team_ok';
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const money = n => '₹' + Number(n).toLocaleString('en-IN');
+
+let orders = [];
+let filter = 'all';
+let query = '';
+
+function toast(m){
+  const t = $('#toast');
+  t.textContent = m; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2000);
+}
+function load(){ try { orders = JSON.parse(localStorage.getItem(ORD_KEY)) || []; } catch(e){ orders = []; } }
+function persist(){ localStorage.setItem(ORD_KEY, JSON.stringify(orders)); }
+function statusLabel(s){ return s === 'new' ? 'New' : s === 'packed' ? 'Packed' : s === 'delivered' ? 'Delivered' : s; }
+
+function renderStats(){
+  $('#sTotal').textContent = orders.length;
+  $('#sNew').textContent = orders.filter(o => o.status === 'new').length;
+  $('#sPacked').textContent = orders.filter(o => o.status === 'packed').length;
+  $('#sDelivered').textContent = orders.filter(o => o.status === 'delivered').length;
+  $('#sValue').textContent = money(orders.reduce((a,o) => a + o.total, 0));
+}
+
+function renderFilters(){
+  const box = $('#oFilter');
+  const opts = [['all','All orders'],['new','New'],['packed','Packed'],['delivered','Delivered']];
+  box.innerHTML = opts.map(([k,l]) =>
+    '<button class="chip' + (filter === k ? ' on' : '') + '" data-f="' + k + '">' + l + '</button>'
+  ).join('');
+  box.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filter = b.dataset.f; render(); });
+}
+
+function visible(){
+  const q = query.trim().toLowerCase();
+  return orders.slice().reverse().filter(o =>
+    (filter === 'all' || o.status === filter) &&
+    (!q || o.id.toLowerCase().includes(q) || o.name.toLowerCase().includes(q) || o.phone.includes(q))
+  );
+}
+
+function renderTable(){
+  const list = visible();
+  const body = $('#oBody');
+  if (!list.length){
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--mut);padding:42px">No orders yet. Orders placed on the store appear here.</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(o =>
+    '<tr>' +
+      '<td><b style="color:var(--red)">#' + o.id + '</b></td>' +
+      '<td><b>' + o.name + '</b><br><span class="hint">+91 ' + o.phone + '</span><br><span class="hint">' + o.address + '</span></td>' +
+      '<td>' + o.items.map(i => i.name + ' × ' + i.qty).join('<br>') + '</td>' +
+      '<td><b>' + money(o.total) + '</b></td>' +
+      '<td class="hint">' + new Date(o.at).toLocaleString('en-IN') + '</td>' +
+      '<td>' +
+        '<span class="tag ' + o.status + '" style="margin-bottom:9px;display:inline-block">' + statusLabel(o.status) + '</span>' +
+        '<div class="ost">' +
+          '<button data-set="new" data-id="' + o.id + '" class="' + (o.status === 'new' ? 'on' : '') + '">New</button>' +
+          '<button data-set="packed" data-id="' + o.id + '" class="' + (o.status === 'packed' ? 'on' : '') + '">Packed</button>' +
+          '<button data-set="delivered" data-id="' + o.id + '" class="' + (o.status === 'delivered' ? 'on' : '') + '">Delivered</button>' +
+        '</div>' +
+        '<div style="margin-top:8px"><a class="hint" style="color:var(--red);font-weight:700" href="https://wa.me/91' + o.phone + '" target="_blank">💬 WhatsApp customer</a></div>' +
+      '</td>' +
+    '</tr>'
+  ).join('');
+
+  body.querySelectorAll('[data-set]').forEach(b => b.onclick = () => {
+    const o = orders.find(x => x.id === b.dataset.id);
+    if (!o) return;
+    o.status = b.dataset.set;
+    persist(); render();
+    toast('#' + o.id + ' marked ' + statusLabel(o.status));
+  });
+}
+
+function render(){ renderStats(); renderFilters(); renderTable(); }
+
+function exportCsv(){
+  if (!orders.length) return toast('No orders to export');
+  const rows = [['Order','Customer','Phone','Address','Items','Total','Status','Placed']];
+  orders.forEach(o => rows.push([
+    o.id, o.name, o.phone, o.address,
+    o.items.map(i => i.name + ' x' + i.qty).join('; '),
+    o.total, o.status, new Date(o.at).toLocaleString('en-IN')
+  ]));
+  const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\\n');
+  const url = URL.createObjectURL(new Blob(['\\ufeff' + csv], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = 'diwali-crackers-orders.csv'; a.click();
+  URL.revokeObjectURL(url);
+  toast('CSV downloaded');
+}
+
+function showDash(){
+  $('#gate').style.display = 'none';
+  $('#dash').style.display = '';
+  load(); render();
+}
+
+$('#unlock').onclick = () => {
+  if ($('#pw').value !== TEAM_PASSWORD) return toast('Wrong password');
+  sessionStorage.setItem(AUTH_KEY, '1');
+  showDash();
+};
+$('#pw').onkeydown = e => { if (e.key === 'Enter') $('#unlock').click(); };
+$('#refresh').onclick = () => { load(); render(); toast('Refreshed'); };
+$('#logoutBtn').onclick = () => {
+  sessionStorage.removeItem(AUTH_KEY);
+  $('#dash').style.display = 'none';
+  $('#gate').style.display = '';
+  $('#pw').value = '';
+};
+$('#oSearch').oninput = e => { query = e.target.value; renderTable(); };
+$('#exportCsv').onclick = exportCsv;
+
+if (sessionStorage.getItem(AUTH_KEY)) showDash();
+</script>
+</body>
+</html>
