@@ -6,7 +6,7 @@ const CART_KEY = 'dc_cart_v1';
 const USER_KEY = 'dc_user_v1';
 const ORD_KEY  = 'dc_orders_v1';
 const HOME_PHONE = '919494496894';
-const MIN_ORDER = 2500;   // ₪ minimum order value
+const MIN_ORDER = 2499;   // ₪ minimum order value
 
 const CAT_EMOJI = {
   'One Sound Crackers':'💥','Sparklers':'✨','Electric Crackers':'⚡','Bijili Crackers':'🧨',
@@ -20,6 +20,17 @@ const money = n => '₹' + Number(n).toLocaleString('en-IN');
 
 /* ---------- state ---------- */
 let cart = load(CART_KEY, {});
+
+/* drop any cart id that no longer exists in the catalogue (stale localStorage) */
+function pruneCart(){
+  let changed = false;
+  Object.keys(cart).forEach(function(id){
+    if (!PRODUCTS.some(function(p){ return String(p.id) === String(id); })) {
+      delete cart[id]; changed = true;
+    }
+  });
+  if (changed) save(CART_KEY, cart);
+}
 let user = load(USER_KEY, null);
 let orders = load(ORD_KEY, []);
 let openCat = null;
@@ -57,14 +68,96 @@ function waLink(text){
 
 /* Order status → customer gets a WhatsApp message they can send back to us */
 function orderMessage(order, status){
-  const lines = order.items.map(function(i){ return i.name + ' x' + i.qty + ' = ₹' + (i.price * i.qty); });
+  /* the shop's inbox reads like a slip of paper, not a chat message */
   const head = {
-    new:       'Hi ' + order.name + ', your order ' + order.id + ' is PLACED ✅',
-    packed:    'Hi ' + order.name + ', your order ' + order.id + ' is PACKED 📦',
-    delivered: 'Hi ' + order.name + ', your order ' + order.id + ' is DELIVERED 🎉',
-  }[status] || ('Order ' + order.id + ' update');
-  return head + '\n\n' + lines.join('\n') + '\n\nTOTAL: ₹' + order.total;
+    new:       'New order ' + order.id,
+    packed:    'Order ' + order.id + ' is packed',
+    delivered: 'Order ' + order.id + ' is delivered',
+  }[status] || ('Order ' + order.id);
+
+  const who = order.name + '  +91' + order.phone;
+  const lines = order.items.map(function(i){
+    return i.name + ' x' + i.qty + ' = ₹' + (i.price * i.qty);
+  });
+
+  return head + '\n' + who + '\n' + order.address + '\n\n' +
+         lines.join('\n') + '\n\nTOTAL: ₹' + order.total;
 }
+
+
+/* ---------- promo carousel: the two family packs ---------- */
+var promoIndex = 0, promoTimer = null;
+
+function renderPromo(){
+  var box = document.getElementById('promo');
+  if (!box) return;
+  var kits = kitProducts();
+  if (kits.length < 1){ box.style.display = 'none'; return; }
+  box.style.display = '';
+
+  box.innerHTML = kits.map(function(k, i){
+    var save = k.mrp > k.price ? Math.round((1 - k.price / k.mrp) * 100) : 0;
+    return '<div class="promo-slide' + (i === promoIndex ? ' on' : '') + '">' +
+      '<div class="promo-art">' +
+        (k.img ? '<img src="images/' + k.img + '.png" alt="">' : '<span>\uD83C\uDF81</span>') +
+      '</div>' +
+      '<div class="promo-info">' +
+        '<span class="promo-tag">Family Pack</span>' +
+        '<h4>' + k.name + '</h4>' +
+        '<p>' + (k.kitCount || '') + ' item types \u00b7 ' + (k.kitPieces || '') + ' pieces in one box</p>' +
+        '<div class="promo-price"><b>' + money(k.price) + '</b>' +
+          (save ? '<s>' + money(k.mrp) + '</s><span class="save-tag">Save ' + save + '%</span>' : '') +
+        '</div>' +
+        '<button class="btn gold promo-btn" data-view="' + k.id + '">See what\u2019s inside \u2192</button>' +
+      '</div>' +
+    '</div>';
+  }).join('') +
+  '<div class="promo-dots">' + kits.map(function(k, i){
+    return '<span class="' + (i === promoIndex ? 'on' : '') + '" data-dot="' + i + '"></span>';
+  }).join('') + '</div>';
+
+  box.querySelectorAll('[data-view]').forEach(function(b){
+    b.onclick = function(){ showKit(b.getAttribute('data-view')); };
+  });
+  box.querySelectorAll('[data-dot]').forEach(function(d){
+    d.onclick = function(){ promoIndex = Number(d.getAttribute('data-dot')); renderPromo(); };
+  });
+}
+
+function startPromo(){
+  clearInterval(promoTimer);
+  promoTimer = setInterval(function(){
+    if (kitProducts().length < 2) return;
+    promoIndex = (promoIndex + 1) % kitProducts().length;
+    renderPromo();
+  }, 5000);
+}
+
+/* ---------- what is inside a kit ---------- */
+function showKit(id){
+  var k = PRODUCTS.find(function(x){ return String(x.id) === String(id); });
+  if (!k) return;
+  var key = k.kit === 'k3499' ? 'k3499' : 'k2499';
+  var list = kitItems(key);
+  var pieces = list.reduce(function(a, x){ return a + x.qty; }, 0);
+
+  document.getElementById('kitName').textContent = k.name;
+  document.getElementById('kitMeta').textContent =
+    list.length + ' item types \u00b7 ' + pieces + ' pieces \u00b7 ' + money(k.price);
+  document.getElementById('kitList').innerHTML = list.map(function(it){
+    return '<div class="citem">' +
+      '<div class="ci-em">' + (it.img ? '<img src="images/' + it.img + '.png" alt="">' : '\uD83C\uDF06') + '</div>' +
+      '<div><div class="ci-n">' + it.name + '</div>' +
+      '<div class="ci-p">' + money(it.price) + ' each</div></div>' +
+      '<div class="ci-t"><b>\u00d7' + it.qty + '</b></div>' +
+    '</div>';
+  }).join('');
+  document.getElementById('kitAdd').onclick = function(){
+    addToCart(k.id); closeModal('#kitModal');
+  };
+  openModal('#kitModal');
+}
+
 
 /* ---------- visuals ---------- */
 function photoOrEmoji(p){
@@ -73,10 +166,26 @@ function photoOrEmoji(p){
 }
 
 /* ---------- catalogue ---------- */
+const PROMO_CAT = 'Diwali Kits';
+
 function categories(){
   const map = new Map();
   PRODUCTS.forEach(p => map.set(p.cat, (map.get(p.cat) || 0) + 1));
-  return [...map.entries()].map(([name, count]) => ({ name, count }));
+  return [...map.entries()]
+    .filter(function(e){ return e[0] !== PROMO_CAT; })
+    .map(function(e){ return { name: e[0], count: e[1] }; });
+}
+
+/* the two family packs, for the promo banner */
+function kitProducts(){
+  return PRODUCTS.filter(function(p){ return p.cat === PROMO_CAT; });
+}
+
+/* what sits inside one kit, from the k2499 / k3499 flags */
+function kitItems(key){
+  return PRODUCTS
+    .filter(function(p){ return p[key] > 0; })
+    .map(function(p){ return { name: p.name, qty: p[key], price: p.price, img: p.img }; });
 }
 
 /* level 1 — category tiles (emoji, no photos) */
@@ -384,7 +493,8 @@ function openCheckout(){
   $('#coLines').innerHTML = Object.entries(cart).map(function(pair){
     const id = pair[0], q = pair[1];
     const p = PRODUCTS.find(function(x){ return String(x.id) === String(id); });
-    return p ? '<div class="tot"><span>' + p.name + ' × ' + q + '</span><b style="font-size:15px">' + money(p.price * q) + '</b></div>' : '';
+    if (!p) return '';
+    return '<div class="tot"><span>' + p.name + ' × ' + q + '</span><b style="font-size:15px">' + money(p.price * q) + '</b></div>';
   }).join('');
   $('#coTotal').textContent = money(cartTotal());
   openModal('#checkoutModal');
@@ -421,26 +531,30 @@ function bindCheckout(){
       items: Object.entries(cart).map(function(pair){
         const id = pair[0], q = pair[1];
         const p = PRODUCTS.find(function(x){ return String(x.id) === String(id); });
+        if (!p) return null;
         return { id: id, name: p.name, qty: q, price: p.price };
-      }),
+      }).filter(Boolean),
       total: cartTotal(),
       status: 'new',
       at: new Date().toISOString()
     };
     orders.push(order); save(ORD_KEY, orders);
 
+    /* send the order straight to the shop's WhatsApp */
+    window.open(waLink(orderMessage(order, 'new')), '_blank');
+
     cart = {}; save(CART_KEY, cart);
     renderCart(); renderShop();
     closeModal('#checkoutModal');
     $('#okOrderId').textContent = '#' + order.id;
-    $('#okMsgLink').href = waLink(orderMessage(order, 'new'));
     openModal('#okModal');
   };
 }
 
 /* ---------- wiring ---------- */
 function boot(){
-  renderShop(); renderCart(); renderUser();
+  pruneCart();
+  renderShop(); renderCart(); renderUser(); renderPromo(); startPromo();
   bindLogin(); bindCheckout();
 
   $('#menuBtn').onclick = function(){ $('#links').classList.toggle('open'); };
