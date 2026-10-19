@@ -132,7 +132,7 @@ function startPromo(){
 function showKit(id){
   var k = PRODUCTS.find(function(x){ return String(x.id) === String(id); });
   if (!k) return;
-  var key = k.kit === 'k3499' ? 'k3499' : 'k2499';
+  var key = (k.kit === 'k3499' || k.kit === 'a4499' || k.kit === 'a5999') ? k.kit : 'k2499';
   var list = kitItems(key);
   var pieces = list.reduce(function(a, x){ return a + x.qty; }, 0);
 
