@@ -1,5 +1,5 @@
 /* ===== Diwali Crackers — storefront =====
-   Prices: PRODUCTS[].price = customer price, PRODUCTS[].mrp = strike-through MRP.
+   Prices: PRODUCTS[].price = the manager's Excel cost, shown as-is.
    Photos: PRODUCTS[].img = file name inside images/ (e.g. os1 → images/os1.png).
    Category tiles show an emoji; item cards show the photo. */
 const CART_KEY = 'dc_cart_v1';
@@ -56,9 +56,7 @@ function cartCount(){ return Object.values(cart).reduce((a,b) => a + b, 0); }
 function cartTotal(){ return Object.entries(cart).reduce((a,[id,q]) => {
   const p = PRODUCTS.find(x => String(x.id) === String(id)); return a + (p ? p.price * q : 0);
 }, 0); }
-function cartMrpTotal(){ return Object.entries(cart).reduce((a,[id,q]) => {
-  const p = PRODUCTS.find(x => String(x.id) === String(id)); return a + (p ? p.mrp * q : 0);
-}, 0); }
+/* prices are quoted as-is, so there is no "you save" figure to show */
 
 
 /* ---------- WhatsApp helpers ---------- */
@@ -96,7 +94,6 @@ function renderPromo(){
   box.style.display = '';
 
   box.innerHTML = kits.map(function(k, i){
-    var save = k.mrp > k.price ? Math.round((1 - k.price / k.mrp) * 100) : 0;
     return '<div class="promo-slide' + (i === promoIndex ? ' on' : '') + '">' +
       '<div class="promo-art">' +
         (k.img ? '<img src="images/' + k.img + '.png" alt="">' : '<span>\uD83C\uDF81</span>') +
@@ -105,9 +102,7 @@ function renderPromo(){
         '<span class="promo-tag">Family Pack</span>' +
         '<h4>' + k.name + '</h4>' +
         '<p>' + (k.kitCount || '') + ' item types \u00b7 ' + (k.kitPieces || '') + ' pieces in one box</p>' +
-        '<div class="promo-price"><b>' + money(k.price) + '</b>' +
-          (save ? '<s>' + money(k.mrp) + '</s><span class="save-tag">Save ' + save + '%</span>' : '') +
-        '</div>' +
+        '<div class="promo-price"><b>' + money(k.price) + '</b></div>' +
         '<button class="btn gold promo-btn" data-view="' + k.id + '">See what\u2019s inside \u2192</button>' +
       '</div>' +
     '</div>';
@@ -231,7 +226,6 @@ function renderProducts(){
 
   grid.innerHTML = list.map(function(p){
     const q = cart[p.id] || 0;
-    const save = p.mrp > p.price ? Math.round((1 - p.price / p.mrp) * 100) : 0;
     const action = q
       ? '<div class="stepper">' +
           '<button data-dec="' + p.id + '">−</button>' +
@@ -247,10 +241,7 @@ function renderProducts(){
         '<div class="pc-name">' + p.name + '</div>' +
         '<div class="pc-meta">' + p.pack + ' · Code ' + p.id + '</div>' +
       '</div>' +
-      '<div class="pc-price">' +
-        '<b>' + money(p.price) + '</b>' +
-        (save ? '<s>' + money(p.mrp) + '</s><span class="save-tag">Save ' + save + '%</span>' : '') +
-      '</div>' +
+      '<div class="pc-price"><b>' + money(p.price) + '</b></div>' +
       action +
     '</article>';
   }).join('');
@@ -300,14 +291,28 @@ function renderShop(){
   }
 }
 
-function showCategory(name){
+function showCategory(name, fromHistory){
   openCat = name;
-  const shop = $('#shop');
-  if (shop) shop.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  query = '';
+  if (!fromHistory) {
+    /* one history entry per category, so the phone's Back button comes back here */
+    try { history.pushState({ dcCat: name }, '', '#category-' + encodeURIComponent(name)); } catch(e){}
+  }
   renderShop();
+  const shop = $('#shop');
+  if (shop && !fromHistory) shop.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function goBack(){
+  /* if we opened a category, step the history back so the phone's Back stays in step */
+  if (openCat && history.state && history.state.dcCat){
+    history.back();
+    return;
+  }
+  showCategories();
+}
+
+function showCategories(){
   openCat = null;
   query = '';
   const si = $('#searchInput');
@@ -316,6 +321,23 @@ function goBack(){
   const shop = $('#shop');
   if (shop) shop.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+/* the phone's Back button: land on the category grid, never leave the site */
+window.addEventListener('popstate', function(e){
+  const st = e.state;
+  const next = (st && st.dcCat) ? st.dcCat : null;
+  const changed = (next !== openCat);
+  openCat = next;
+  query = '';
+  const si = document.getElementById('searchInput');
+  if (si) si.value = '';
+  renderShop();
+  /* only move the page when the level actually changed — otherwise Back feels jumpy */
+  if (changed){
+    const shop = document.getElementById('shop');
+    if (shop) shop.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+});
 
 /* ---------- cart ---------- */
 function addToCart(id){
@@ -390,8 +412,8 @@ function renderCart(){
 
   const sub = cartTotal();
   $('#drTotal').textContent = money(sub);
-  const saved = cartMrpTotal() - sub;
-  $('#drSaved').textContent = saved > 1 ? 'You save ' + money(Math.round(saved)) + ' on this order' : '';
+  const savedEl = document.getElementById('drSaved');
+  if (savedEl) savedEl.style.display = 'none';
 
   /* minimum order value */
   const left = MIN_ORDER - sub;
