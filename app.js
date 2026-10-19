@@ -138,12 +138,11 @@ function showKit(id){
 
   document.getElementById('kitName').textContent = k.name;
   document.getElementById('kitMeta').textContent =
-    list.length + ' item types \u00b7 ' + pieces + ' pieces \u00b7 ' + money(k.price);
+    list.length + ' item types \u00b7 ' + pieces + ' pieces in one box';
   document.getElementById('kitList').innerHTML = list.map(function(it){
     return '<div class="citem">' +
       '<div class="ci-em">' + (it.img ? '<img src="images/' + it.img + '.png" alt="">' : '\uD83C\uDF06') + '</div>' +
-      '<div><div class="ci-n">' + it.name + '</div>' +
-      '<div class="ci-p">' + money(it.price) + ' each</div></div>' +
+      '<div><div class="ci-n">' + it.name + '</div></div>' +
       '<div class="ci-t"><b>\u00d7' + it.qty + '</b></div>' +
     '</div>';
   }).join('');
