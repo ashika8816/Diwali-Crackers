@@ -92,7 +92,7 @@
     </div>
 
     <p class="hint" style="text-align:center;margin-top:16px">
-      Orders placed on the store are saved in this browser. Once we connect Firebase, every order will land here instantly from any device.
+      Orders come straight from the cloud - every order placed on the store lands here from any device, within seconds.
     </p>
     </div>
 
@@ -144,6 +144,60 @@
 const TEAM_PASSWORD = 'diwali2026';
 const ORD_KEY = 'dc_orders_v1';
 const AUTH_KEY = 'dc_team_ok';
+
+/* ---------- Firebase (orders + stock) ---------- */
+const fbReady = !!(window.FIREBASE_CONFIG && window.firebase);
+let db = null;
+if (fbReady){
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(window.FIREBASE_CONFIG);
+    db = firebase.firestore();
+  } catch(e){ console.warn('Firebase init failed', e); }
+}
+
+/* every order, pulled from the cloud */
+function loadFromCloud(){
+  if (!db) return Promise.resolve(false);
+  return db.collection('orders').get().then(function(snap){
+    var list = [];
+    snap.forEach(function(doc){
+      var d = doc.data() || {};
+      if (!d.id) return;                 /* skips the placeholder document */
+      list.push(d);
+    });
+    list.sort(function(a,b){ return String(a.at) < String(b.at) ? 1 : -1; });
+    orders = list;
+    render();
+    return true;
+  }).catch(function(e){ console.warn('cloud load failed', e); return false; });
+}
+
+function saveToCloud(o){
+  if (!db) return Promise.resolve();
+  return db.collection('orders').doc(o.id).update({ status: o.status })
+    .catch(function(e){ console.warn('status update failed', e); });
+}
+
+/* stock numbers, pulled from the cloud */
+function loadStockFromCloud(){
+  if (!db) return Promise.resolve();
+  return db.collection('stock').get().then(function(snap){
+    snap.forEach(function(doc){
+      var d = doc.data() || {};
+      if (d.id === undefined || d.id === null) return;
+      stock[String(d.id)] = Number(d.qty === undefined ? d.stock : d.qty);
+    });
+  }).catch(function(e){ console.warn('stock load failed', e); });
+}
+
+function saveStockToCloud(){
+  if (!db) return Promise.resolve();
+  var wb = db.batch();
+  Object.keys(stock).forEach(function(id){
+    wb.set(db.collection('stock').doc('item' + id), { id: Number(id), qty: Number(stock[id]) });
+  });
+  return wb.commit().catch(function(e){ console.warn('stock save failed', e); });
+}
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -217,7 +271,7 @@ function renderTable(){
     const o = orders.find(x => x.id === b.dataset.id);
     if (!o) return;
     o.status = b.dataset.set;
-    persist(); render();
+    persist(); saveToCloud(o); render();
     toast('#' + o.id + ' marked ' + statusLabel(o.status));
   });
 }
@@ -244,6 +298,7 @@ function showDash(){
   $('#gate').style.display = 'none';
   $('#dash').style.display = '';
   load(); render();
+  loadFromCloud();
 }
 
 $('#unlock').onclick = () => {
@@ -252,7 +307,7 @@ $('#unlock').onclick = () => {
   showDash();
 };
 $('#pw').onkeydown = e => { if (e.key === 'Enter') $('#unlock').click(); };
-$('#refresh').onclick = () => { load(); render(); toast('Refreshed'); };
+$('#refresh').onclick = function(){ toast('Refreshing...'); loadFromCloud().then(function(ok){ toast(ok ? 'Orders refreshed from cloud' : 'Refreshed (browser only)'); }); };
 $('#logoutBtn').onclick = () => {
   sessionStorage.removeItem(AUTH_KEY);
   $('#dash').style.display = 'none';
@@ -350,7 +405,7 @@ function renderStockStats(){
 function renderStock(){ renderStockCats(); renderStockTable(); renderStockStats(); }
 
 document.getElementById('stSearch').oninput = e => { stQuery = e.target.value; renderStockTable(); };
-document.getElementById('stSave').onclick = () => { saveStock(); toast('Stock saved'); };
+document.getElementById('stSave').onclick = function(){ saveStock(); saveStockToCloud().then(function(){ toast('Stock saved for the website'); }); };
 document.getElementById('stClear').onclick = () => {
   if (!confirm('Clear every stock number?')) return;
   stock = {}; saveStock(); renderStock(); toast('Stock cleared');
@@ -381,7 +436,7 @@ function showTab(which){
   stk.style.display = which === 'stock' ? '' : 'none';
   tb.classList.toggle('on', which === 'orders');
   ts.classList.toggle('on', which === 'stock');
-  if (which === 'stock'){ loadStock(); renderStock(); }
+  if (which === 'stock'){ loadStock(); renderStock(); loadStockFromCloud().then(renderStock); }
 }
 document.getElementById('tabOrders').onclick = () => showTab('orders');
 document.getElementById('tabStock').onclick = () => showTab('stock');
