@@ -6,7 +6,43 @@ const CART_KEY = 'dc_cart_v1';
 const USER_KEY = 'dc_user_v1';
 const ORD_KEY  = 'dc_orders_v1';
 const HOME_PHONE = '919494496894';
-const MIN_ORDER = 2499;   // ₪ minimum order value
+const MIN_ORDER = 2499;
+
+/* ---------- Firebase (orders + stock) ---------- */
+const fbReady = !!(window.FIREBASE_CONFIG && window.firebase);
+let db = null;
+if (fbReady){
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(window.FIREBASE_CONFIG);
+    db = firebase.firestore();
+  } catch(e){ console.warn('Firebase init failed', e); }
+}
+
+/* id -> stock number, filled from Firestore at boot */
+const stockMap = {};
+
+function saveOrderToCloud(order){
+  if (!db) return;
+  db.collection('orders').doc(order.id).set(order)
+    .catch(function(e){ console.warn('order cloud save failed', e); });
+}
+
+function loadStock(){
+  if (!db) return Promise.resolve();
+  return db.collection('stock').get().then(function(snap){
+    snap.forEach(function(doc){
+      const d = doc.data() || {};
+      if (d.id === undefined || d.id === null) return;   /* skips the placeholder doc */
+      stockMap[String(d.id)] = Number(d.qty === undefined ? d.stock : d.qty);
+    });
+    renderShop(); renderCart();
+  }).catch(function(e){ console.warn('stock load failed', e); });
+}
+
+function stockOf(id){
+  const v = stockMap[String(id)];
+  return (v === undefined || isNaN(v)) ? null : v;
+}   // ₪ minimum order value
 
 const CAT_EMOJI = {
   'One Sound Crackers':'💥','Sparklers':'✨','Electric Crackers':'⚡','Bijili Crackers':'🧨',
@@ -560,6 +596,7 @@ function bindCheckout(){
       at: new Date().toISOString()
     };
     orders.push(order); save(ORD_KEY, orders);
+    saveOrderToCloud(order);   /* straight to the shop dashboard */
 
     /* send the order straight to the shop's WhatsApp */
     window.open(waLink(orderMessage(order, 'new')), '_blank');
@@ -576,6 +613,7 @@ function bindCheckout(){
 function boot(){
   pruneCart();
   renderShop(); renderCart(); renderUser(); renderPromo(); startPromo();
+  loadStock();   /* stock numbers come from Firestore */
   bindLogin(); bindCheckout();
 
   $('#menuBtn').onclick = function(){ $('#links').classList.toggle('open'); };
