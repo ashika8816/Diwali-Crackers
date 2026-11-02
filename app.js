@@ -42,16 +42,6 @@ function loadStock(){
 function stockOf(id){
   const v = stockMap[String(id)];
   return (v === undefined || isNaN(v)) ? null : v;
-}
-
-/* null = not tracked (always sellable), 0 or less = sold out */
-function isSoldOut(p){ const v = stockOf(p.id); return v !== null && v <= 0; }
-function stockBadge(p){
-  const v = stockOf(p.id);
-  if (v === null) return '';
-  if (v <= 0) return '<span class="stock-out">Out of stock</span>';
-  if (v <= 5) return '<span class="stock-low">Only ' + v + ' left</span>';
-  return '';
 }   // ₪ minimum order value
 
 const CAT_EMOJI = {
@@ -99,13 +89,6 @@ function toast(msg){
 }
 
 function cartCount(){ return Object.values(cart).reduce((a,b) => a + b, 0); }
-function cartHasSoldOut(){
-  return Object.keys(cart).some(function(id){
-    const p = PRODUCTS.find(function(x){ return String(x.id) === String(id); });
-    return p && isSoldOut(p);
-  });
-}
-
 function cartTotal(){ return Object.entries(cart).reduce((a,[id,q]) => {
   const p = PRODUCTS.find(x => String(x.id) === String(id)); return a + (p ? p.price * q : 0);
 }, 0); }
@@ -278,16 +261,13 @@ function renderProducts(){
 
   grid.innerHTML = list.map(function(p){
     const q = cart[p.id] || 0;
-    const soldOut = isSoldOut(p);
-    const action = soldOut
-      ? '<button class="add sold" disabled>Out of stock</button>'
-      : (q
+    const action = q
       ? '<div class="stepper">' +
           '<button data-dec="' + p.id + '">−</button>' +
           '<span>' + q + '</span>' +
           '<button data-inc="' + p.id + '">+</button>' +
         '</div>'
-      : '<button class="add" data-add="' + p.id + '">Add to Cart</button>');
+      : '<button class="add" data-add="' + p.id + '">Add to Cart</button>';
 
     return '<article class="pcard">' +
       photoOrEmoji(p) +
@@ -296,7 +276,7 @@ function renderProducts(){
         '<div class="pc-name">' + p.name + '</div>' +
         '<div class="pc-meta">' + p.pack + ' · Code ' + p.id + '</div>' +
       '</div>' +
-      '<div class="pc-price"><b>' + money(p.price) + '</b>' + stockBadge(p) + '</div>' +
+      '<div class="pc-price"><b>' + money(p.price) + '</b></div>' +
       action +
     '</article>';
   }).join('');
@@ -396,8 +376,6 @@ window.addEventListener('popstate', function(e){
 
 /* ---------- cart ---------- */
 function addToCart(id){
-  var prod = PRODUCTS.find(function(x){ return String(x.id) === String(id); });
-  if (prod && isSoldOut(prod)) return toast('Sorry, that item is out of stock');
   cart[id] = (cart[id] || 0) + 1;
   save(CART_KEY, cart);
   renderShop(); renderCart();
@@ -431,17 +409,9 @@ function renderCart(){
     $('#drFoot').style.display = 'none';
     return;
   }
-  /* anything that has sold out leaves the cart */
-  var dropped = false;
-  Object.keys(cart).forEach(function(id){
-    var dp = PRODUCTS.find(function(x){ return String(x.id) === String(id); });
-    if (dp && isSoldOut(dp)){ delete cart[id]; dropped = true; }
-  });
-  if (dropped){ save(CART_KEY, cart); toast('An item went out of stock and was removed'); }
-
   $('#drFoot').style.display = '';
 
-  body.innerHTML = Object.keys(cart).map(function(id){
+  body.innerHTML = ids.map(function(id){
     const p = PRODUCTS.find(function(x){ return String(x.id) === String(id); });
     if (!p) return '';
     const q = cart[id];
@@ -589,7 +559,6 @@ function openCheckout(){
 
 function bindCheckout(){
   $('#checkout').onclick = function(){
-    if (cartHasSoldOut()){ renderCart(); return toast('An item in your cart is out of stock'); }
     if (!cartCount()) return toast('Your cart is empty');
     if (cartTotal() < MIN_ORDER){
       return toast('Minimum order is ' + money(MIN_ORDER) + '. Please add more items.');
@@ -600,10 +569,6 @@ function bindCheckout(){
   };
 
   $('#placeOrder').onclick = function(){
-    if (cartHasSoldOut()){
-      closeModal('#checkoutModal');
-      return toast('An item is out of stock - please review your cart');
-    }
     if (cartTotal() < MIN_ORDER){
       closeModal('#checkoutModal');
       return toast('Minimum order is ' + money(MIN_ORDER) + '. Please add more items.');
