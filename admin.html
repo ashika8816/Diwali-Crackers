@@ -112,6 +112,7 @@
         </div>
         <button class="hbtn" id="stSave">💾 Save stock</button>
         <button class="hbtn" id="stExport">⬇ Export CSV</button>
+        <button class="hbtn" id="stAllOut" style="background:#8b0f1e;color:#fff;border-color:#8b0f1e">🚫 Mark all out of stock</button>
         <button class="hbtn" id="stClear">Clear all</button>
       </div>
 
@@ -406,9 +407,17 @@ function renderStock(){ renderStockCats(); renderStockTable(); renderStockStats(
 
 document.getElementById('stSearch').oninput = e => { stQuery = e.target.value; renderStockTable(); };
 document.getElementById('stSave').onclick = function(){ saveStock(); saveStockToCloud().then(function(){ toast('Stock saved for the website'); }); };
-document.getElementById('stClear').onclick = () => {
-  if (!confirm('Clear every stock number?')) return;
-  stock = {}; saveStock(); renderStock(); toast('Stock cleared');
+document.getElementById('stAllOut').onclick = function(){
+  if (!confirm('Mark EVERY item out of stock? Customers will not be able to order anything.')) return;
+  PRODUCTS.forEach(function(p){ stock[String(p.id)] = 0; });
+  saveStock(); renderStock();
+  saveStockToCloud().then(function(){ toast('All items marked out of stock'); });
+};
+
+document.getElementById('stClear').onclick = function(){
+  if (!confirm('Clear every stock number? Items go back to normal.')) return;
+  stock = {}; saveStock(); renderStock();
+  saveStockToCloud().then(function(){ toast('Stock cleared everywhere'); });
 };
 document.getElementById('stExport').onclick = () => {
   const rows = [['Item', 'Category', 'Price', 'Stock', 'Status']];
